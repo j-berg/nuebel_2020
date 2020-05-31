@@ -23,15 +23,24 @@ data.columns = [
     'pex3\u0394msp1\u0394-3',
 ]
 
+data = data[[
+    'pex3\u0394-1',
+    'pex3\u0394-2',
+    'pex3\u0394-3',
+    'pex3\u0394msp1\u0394-1',
+    'pex3\u0394msp1\u0394-2',
+    'pex3\u0394msp1\u0394-3',
+]]
+
 """Build metadata
 """
 meta = pd.DataFrame()
 meta[0] = data.columns
 meta[1] = [
-    'pex19\u0394',
-    'pex19\u0394',
-    'pex19\u0394msp1\u0394',
-    'pex19\u0394msp1\u0394',
+    #'pex19\u0394',
+    #'pex19\u0394',
+    #'pex19\u0394msp1\u0394',
+    #'pex19\u0394msp1\u0394',
     'pex3\u0394',
     'pex3\u0394',
     'pex3\u0394',
@@ -55,8 +64,6 @@ pex_list = [
     "PEX29",
     "PEX5",
     "PEX7",
-    "PEX6",
-    "PEX1",
     "POT1",
     "MDH3",
     "LYS1",
@@ -69,18 +76,20 @@ pex_list = [
 """Heatmap of PEX proteins
 """
 sample_colors = {
-    'pex19\u0394':'lightgrey',
-    'pex19\u0394msp1\u0394':'grey',
     'pex3\u0394':'darkgrey',
     'pex3\u0394msp1\u0394':'black'
 }
 
 data_scaled, data_labeled = xp.prep_data(data, meta, gene_scale=True)
 
+
+
+
 xp.pca(
     data_scaled,
     meta,
     sample_colors,
+    n_components=2,
     save_fig='/Users/jordan/Desktop/nuebel_2020/pex3/pca_all.png')
 
 gene_info = pd.DataFrame()
@@ -98,8 +107,6 @@ gene_info[1] = [
     'Importomer',
     'Cytosolic Cargo Receptors',
     'Cytosolic Cargo Receptors',
-    'Membrane Anchored',
-    'Membrane Anchored',
     'Matrix Proteins',
     'Matrix Proteins',
     'Matrix Proteins',
@@ -111,7 +118,6 @@ gene_info[1] = [
 gene_colors = {
     'Importomer':'#a49284',
     'Cytosolic Cargo Receptors':'#f6efd0',
-    'Membrane Anchored':'#41796b',
     'Matrix Proteins':'lightblue',
     'Other':'#d95f02'
 }
@@ -126,7 +132,7 @@ xp.heatmap(
     col_cluster = False,
     row_cluster = False,
     cbar_kws = {'label':'z-score'},
-    figsize = (5,6)
+    figsize = (3,6)
 )
 
 # Format legends
@@ -155,7 +161,7 @@ label_points = {
     'PEX11':[1.45,	1.95],
     'PEX2':[1.55,	3.3],
     'PEX15':[1.65,	2.2],
-    'MSP1':[-4,	1.75],
+    'MSP1':[-4,	    1.75],
 }
 
 xp.volcano(
