@@ -82,9 +82,6 @@ sample_colors = {
 
 data_scaled, data_labeled = xp.prep_data(data, meta, gene_scale=True)
 
-
-
-
 xp.pca(
     data_scaled,
     meta,
