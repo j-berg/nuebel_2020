@@ -1,15 +1,30 @@
+import os
 import pandas as pd
 import numpy as np
+import scipy
+from statsmodels.stats.multitest import multipletests
 import xpressplot as xp
 import matplotlib
 import matplotlib.pyplot as plt
+from numpy import mean, std
+from math import sqrt
+
+def cohen_d(x,y):
+    return (
+        mean(x) - mean(y)) / sqrt((std(x, ddof=1) ** 2 + std(y, ddof=1) ** 2) / 2.0
+    )
 
 """Import data
 """
 data = pd.read_csv(
-    '/Users/jordan/Desktop/nuebel_2020/pex3/pex3_scaled.txt',
+    os.path.join(os.getcwd(), "pex3", "Rutter_Mito_10plex1_protein_quant_8344_sum.txt"),
     sep='\t',
     index_col=0)
+
+data.index = data['Gene Symbol']
+data.index.name = None
+data = data.drop(['Gene Symbol', 'Description', 'Number of peptides'], axis=1)
+
 data.columns = [
     'pex19\u0394-1',
     'pex19\u0394-2',
@@ -31,6 +46,9 @@ data = data[[
     'pex3\u0394msp1\u0394-2',
     'pex3\u0394msp1\u0394-3',
 ]]
+
+data.stack().hist()
+
 
 """Build metadata
 """
@@ -87,7 +105,7 @@ xp.pca(
     meta,
     sample_colors,
     n_components=2,
-    save_fig='/Users/jordan/Desktop/nuebel_2020/pex3/pca_all.png')
+    save_fig=os.path.join(os.getcwd(), "pex3", "pca_all.png"))
 
 gene_info = pd.DataFrame()
 gene_info[0] = pex_list
@@ -129,7 +147,7 @@ xp.heatmap(
     col_cluster = False,
     row_cluster = False,
     cbar_kws = {'label':'z-score'},
-    figsize = (3,6)
+    figsize = (4,6)
 )
 
 # Format legends
@@ -146,52 +164,158 @@ plt.legend(handles_g, list(sample_colors.keys()), bbox_to_anchor=(15, 1.2705), l
 
 # Save and show figure
 plt.savefig(
-    '/Users/jordan/Desktop/nuebel_2020/pex3/heatmap.png',
+    os.path.join(os.getcwd(), "pex3", "heatmap.png"),
     dpi=1800,
     bbox_inches='tight'
 )
 
 """Volcano Plot
 """
-label_points = {
-    'PEX3':[-3.85,	0.4],
-    'PEX11':[1.45,	1.95],
-    'PEX2':[1.55,	3.3],
-    'PEX15':[1.65,	2.2],
-    'MSP1':[-4,	    1.75],
-}
+exp = [
+    'pex3\u0394msp1\u0394-1',
+    'pex3\u0394msp1\u0394-2',
+    'pex3\u0394msp1\u0394-3',
+]
+cont = [
+    'pex3\u0394-1',
+    'pex3\u0394-2',
+    'pex3\u0394-3',
+]
 
-xp.volcano(
-    data[[
-        'pex3\u0394-1',
-        'pex3\u0394-2',
-        'pex3\u0394-3',
-        'pex3\u0394msp1\u0394-1',
-        'pex3\u0394msp1\u0394-2',
-        'pex3\u0394msp1\u0394-3'
-    ]],
-    meta.loc[4:],
-    'pex3\u0394msp1',
-    'pex3\u0394-',
-    alpha=0.4,
-    y_threshold=2,
-    x_threshold=[-1,1],
-    highlight_points=[pex_list + ['MSP1']],
-    highlight_color=['red'],
-    whitegrid=True,
-    label_points=label_points,
-    figsize=(5,4)
+data_volcano = data.copy()
+data_volcano['log$_2$(Fold Change)'] = np.log2(
+    data_volcano[exp].sum(axis=1) / data_volcano[cont].sum(axis=1))
+data_volcano['p-val'] = scipy.stats.ttest_ind(
+    data_volcano[exp], data_volcano[cont], axis=1)[1]
+data_volcano['padj'] = multipletests(
+    data_volcano['p-val'].values.tolist(),
+    alpha=0.1,
+    method='fdr_bh',
+    is_sorted=False,
+    returnsorted=False)[1]
+data_volcano['-log$_1$$_0$(p-value)'] = -1 * np.log10(data_volcano['p-val'].values)
+
+for i, r in data_volcano.iterrows():
+    data_volcano.at[i, 'Cohen\'s $\mathit{d}$'] = abs(
+        cohen_d(
+            data[exp].loc[i].values,
+            data[cont].loc[i].values
+        )
+    )
+
+data_volcano.to_csv(
+    os.path.join(os.getcwd(), "pex3", "data_corrected.txt"),
+    sep='\t'
 )
 
-l_box = matplotlib.patches.Rectangle((-4.5,2), 3.5, 4.15, alpha=0.4, color="lightblue", zorder=-10)
-r_box = matplotlib.patches.Rectangle((1,2), 1.75, 4.15, alpha=0.4, color="lightblue", zorder=-10)
+np.log10(data_volcano['log$_2$(Fold Change)'] + 1).hist(bins=50)
+data_volcano['p-val'].hist(bins=50)
+data_volcano['padj'].hist(bins=50)
+
+p_thresh = -1 * np.log10(0.05)
+
+
+data_volcano_select = data_volcano.reindex(labels = pex_list + ['MSP1'])
+
+data_volcano_label = data_volcano.loc[[
+    'PEX2',
+    'PEX3',
+    'PEX11',
+    'PEX12',
+    'PEX13',
+    'PEX15',
+    'MSP1'
+]][['log$_2$(Fold Change)', '-log$_1$$_0$(p-value)']]
+
 ax = plt.gca()
+data_volcano.plot.scatter(
+    'log$_2$(Fold Change)', '-log$_1$$_0$(p-value)',
+    c='black',
+    s=data_volcano['Cohen\'s $\mathit{d}$'] * 10,
+    alpha=0.3,
+    grid=False,
+    ax=ax)
+data_volcano_select.plot.scatter(
+    'log$_2$(Fold Change)', '-log$_1$$_0$(p-value)',
+    c='red',
+    s=data_volcano_select['Cohen\'s $\mathit{d}$'] * 10,
+    alpha=1,
+    grid=False,
+    ax=ax)
+l_box = matplotlib.patches.Rectangle((-4.5,p_thresh), 3.5, 4.15, alpha=0.4, color="lightblue", zorder=-10)
+r_box = matplotlib.patches.Rectangle((1,p_thresh), 1.75, 4.15, alpha=0.4, color="lightblue", zorder=-10)
+ax.set_facecolor('w')
 ax.add_patch(l_box)
 ax.add_patch(r_box)
+ax.axhline(p_thresh, ls='--', color="blue")
+ax.axvline(-1, ls='--', color="blue")
+ax.axvline(1, ls='--', color="blue")
+for index, row in data_volcano_label.iterrows():
+    if index == 'PEX2':
+        x_pos = -0.55
+        y_pos =  0.1
+    elif index == "PEX11":
+        x_pos = -0.55
+        y_pos = 0.1
+    elif index == "PEX13":
+        x_pos = 0.01
+        y_pos = -0.2
+    else:
+        x_pos = 0.01
+        y_pos = 0.1
+    ax.text(
+        row[0] + x_pos, row[1] + y_pos,
+        str(index),
+        horizontalalignment='left',
+        size='medium',
+        color='black',
+        weight='semibold')
+ax.text(
+    -4.35, 3.5,
+    "n = 1",
+    horizontalalignment='left',
+    size='medium',
+    color='blue',
+    weight='semibold')
+ax.text(
+    2, 3.5,
+    "n = 5",
+    horizontalalignment='left',
+    size='medium',
+    color='blue',
+    weight='semibold')
 
 # Save and show figure
 plt.savefig(
-    '/Users/jordan/Desktop/nuebel_2020/pex3/pex3/volcano_plot.png',
+    os.path.join(os.getcwd(), "pex3", "volcano_plot_update.png"),
     dpi=1800,
     bbox_inches='tight'
 )
+
+
+
+g1 = plt.scatter([],[], s=10, marker='o', color='black')
+g2 = plt.scatter([],[], s=20, marker='o', color='black')
+g3 = plt.scatter([],[], s=50, marker='o', color='black')
+plt.legend(
+    (g1, g2, g3),
+    ['1', '2', '5'],
+    bbox_to_anchor=(0, 0),
+    loc=1, borderaxespad=1,
+    title='Cohen\'s $\mathit{d}$')
+plt.savefig(
+    os.path.join(os.getcwd(), "pex3", "volcano_plot_legend.png"),
+    dpi=600,
+    bbox_inches='tight'
+)
+
+
+data_volcano.loc[
+    (data_volcano['log$_2$(Fold Change)'] < -1) &
+    (data_volcano['p-val'] < 0.05)
+]
+
+data_volcano.loc[
+    (data_volcano['log$_2$(Fold Change)'] > 1) &
+    (data_volcano['p-val'] < 0.05)
+]

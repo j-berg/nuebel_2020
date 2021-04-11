@@ -1,13 +1,23 @@
+import os
 import pandas as pd
 import numpy as np
+import scipy
+from statsmodels.stats.multitest import multipletests
 import xpressplot as xp
 import matplotlib
 import matplotlib.pyplot as plt
+from numpy import mean, std
+from math import sqrt
+
+def cohen_d(x,y):
+    return (
+        mean(x) - mean(y)) / sqrt((std(x, ddof=1) ** 2 + std(y, ddof=1) ** 2) / 2.0
+    )
 
 """Import data
 """
 data = pd.read_csv(
-    '/Users/jordan/Desktop/nuebel_2020/pex19/pex_proteomics.txt',
+    os.path.join(os.getcwd(), "pex19", "pex_proteomics.txt"),
     sep='\t',
     index_col=0)
 data = data.T
@@ -80,7 +90,7 @@ xp.pca(
     data_scaled,
     meta,
     sample_colors,
-    save_fig='/Users/jordan/Desktop/nuebel_2020/pex19/pca_all.png')
+    save_fig=os.path.join(os.getcwd(), "pex19", "pca_all.png"))
 
 gene_info = pd.DataFrame()
 gene_info[0] = pex_list
@@ -142,50 +152,164 @@ plt.legend(handles_g, list(sample_colors.keys()), bbox_to_anchor=(15, 1.2705), l
 
 # Save and show figure
 plt.savefig(
-    '/Users/jordan/Desktop/nuebel_2020/pex19/heatmap.png',
+    os.path.join(os.getcwd(), "pex19", "heatmap.png"),
     dpi=1800,
     bbox_inches='tight'
 )
 
 """Volcano Plot
 """
-label_points = {
-    'PEX13':[1.70,5.202765042],
-    'SKY1':[1.85,3.991556031],
-    'PEX11':[1.72,4.503886694],
-    'PEX2':[1.05,5.00],
-    'YKL187C':[1.450269285,2.300255614],
-    'LYS1':[1.30,5.8],
-    'MDH3':[1.147991059,4.056167691],
-    'MSP1':[-4.046580816,4.224192615],
-    'ERV1':[-1.280037783,5.114297065],
-    'THI80':[-1.77,2.154036899],
-}
+exp = [
+    'pex19\u0394msp1\u0394-1',
+    'pex19\u0394msp1\u0394-2',
+    'pex19\u0394msp1\u0394-3',
+    'pex19\u0394msp1\u0394-4',
+    'pex19\u0394msp1\u0394-5'
+]
+cont = [
+    'pex19\u0394-1',
+    'pex19\u0394-2',
+    'pex19\u0394-3',
+    'pex19\u0394-6',
+    'pex19\u0394-7'
+]
 
-xp.volcano(
-    data,
-    meta,
-    'pex19\u0394msp1',
-    'pex19\u0394-',
-    alpha=0.4,
-    y_threshold=2,
-    x_threshold=[-1,1],
-    highlight_points=[pex_list + ['MSP1']],
-    highlight_color=['red'],
-    whitegrid=True,
-    label_points=label_points,
-    figsize=(5,4)
+data_volcano = data.copy()
+data_volcano['log$_2$(Fold Change)'] = np.log2(
+    data_volcano[exp].sum(axis=1) / data_volcano[cont].sum(axis=1))
+data_volcano['p-val'] = scipy.stats.ttest_ind(
+    data_volcano[exp], data_volcano[cont], axis=1)[1]
+data_volcano['padj'] = multipletests(
+    data_volcano['p-val'].values.tolist(),
+    alpha=0.1,
+    method='fdr_bh',
+    is_sorted=False,
+    returnsorted=False)[1]
+data_volcano['-log$_1$$_0$(p-value)'] = -1 * np.log10(data_volcano['p-val'].values)
+
+for i, r in data_volcano.iterrows():
+    data_volcano.at[i, 'Cohen\'s $\mathit{d}$'] = abs(
+        cohen_d(
+            data[exp].loc[i].values,
+            data[cont].loc[i].values
+        )
+    )
+
+data.stack().plot.hist(bins=100)
+data_volcano['p-val'].hist()
+data_volcano['padj'].hist()
+
+data_volcano.to_csv(
+    os.path.join(os.getcwd(), "pex19", "data_corrected.txt"),
+    sep='\t'
 )
 
-l_box = matplotlib.patches.Rectangle((1,2), 1.5, 4.15, alpha=0.4, color="lightblue", zorder=-10)
-r_box = matplotlib.patches.Rectangle((-4.5,2), 3.5, 4.15, alpha=0.4, color="lightblue", zorder=-10)
+p_thresh = -1 * np.log10(0.05)
+
+data_volcano_select = data_volcano.loc[pex_list + ['MSP1']]
+data_volcano_label = data_volcano.loc[[
+    'MSP1',
+    'ERV1',
+    'LYS1',
+    'PEX13',
+    'SKY1',
+    'PEX11',
+    'PEX2',
+    'MDH3',
+    'THI80',
+    'YKL187C'
+]][['log$_2$(Fold Change)', '-log$_1$$_0$(p-value)']]
+
 ax = plt.gca()
+data_volcano.plot.scatter(
+    'log$_2$(Fold Change)', '-log$_1$$_0$(p-value)',
+    c='black',
+    s=data_volcano['Cohen\'s $\mathit{d}$'] * 10,
+    alpha=0.3,
+    grid=False,
+    ax=ax)
+data_volcano_select.plot.scatter(
+    'log$_2$(Fold Change)', '-log$_1$$_0$(p-value)',
+    c='red',
+    s=data_volcano_select['Cohen\'s $\mathit{d}$'] * 10,
+    alpha=1,
+    grid=False,
+    ax=ax)
+l_box = matplotlib.patches.Rectangle((1,p_thresh), 1.5, 8.15, alpha=0.4, color="lightblue", zorder=-10)
+r_box = matplotlib.patches.Rectangle((-4.5,p_thresh), 3.5, 8.15, alpha=0.4, color="lightblue", zorder=-10)
+ax.set_facecolor('w')
 ax.add_patch(l_box)
 ax.add_patch(r_box)
+ax.axhline(p_thresh, ls='--', color="blue")
+ax.axvline(-1, ls='--', color="blue")
+ax.axvline(1, ls='--', color="blue")
+for index, row in data_volcano_label.iterrows():
+    if index == 'PEX13':
+        x_pos = -0.2
+        y_pos = 0.18
+    elif index == 'PEX2':
+        x_pos = -0.65
+        y_pos = -0.12
+    elif index == "ERV1":
+        x_pos = -0.65
+        y_pos = 0.1
+    elif index == "THI80":
+        x_pos = -0.65
+        y_pos = 0.1
+    else:
+        x_pos = 0.07
+        y_pos = 0.1
+    ax.text(
+        row[0] + x_pos, row[1] + y_pos,
+        str(index),
+        horizontalalignment='left',
+        size='medium',
+        color='black',
+        weight='semibold')
+ax.text(
+    -4.35, 5.85,
+    "n = 11",
+    horizontalalignment='left',
+    size='medium',
+    color='blue',
+    weight='semibold')
+ax.text(
+    2, 5.85,
+    "n = 8",
+    horizontalalignment='left',
+    size='medium',
+    color='blue',
+    weight='semibold')
 
 # Save and show figure
 plt.savefig(
-    '/Users/jordan/Desktop/nuebel_2020/pex19/volcano_plot.png',
+    os.path.join(os.getcwd(), "pex19", "volcano_plot_update.png"),
     dpi=1800,
     bbox_inches='tight'
 )
+
+g1 = plt.scatter([],[], s=10, marker='o', color='black')
+g2 = plt.scatter([],[], s=20, marker='o', color='black')
+g3 = plt.scatter([],[], s=50, marker='o', color='black')
+plt.legend(
+    (g1, g2, g3),
+    ['1', '2', '5'],
+    bbox_to_anchor=(0, 0),
+    loc=1, borderaxespad=1,
+    title='Cohen\'s $\mathit{d}$')
+plt.savefig(
+    os.path.join(os.getcwd(), "pex19", "volcano_plot_legend.png"),
+    dpi=1800,
+    bbox_inches='tight'
+)
+
+
+data_volcano.loc[
+    (data_volcano['log$_2$(Fold Change)'] < -1) &
+    (data_volcano['p-val'] < 0.05)
+]
+
+data_volcano.loc[
+    (data_volcano['log$_2$(Fold Change)'] > 1) &
+    (data_volcano['p-val'] < 0.05)
+]
